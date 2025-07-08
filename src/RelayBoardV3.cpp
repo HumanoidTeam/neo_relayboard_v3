@@ -83,6 +83,11 @@ void RelayBoardV3::main(){
 		set_timer_millis(update_interval_ms, std::bind(&RelayBoardV3::update, this));
 	}
 
+	// Set default safety mode
+	const pilot::safety_mode_e kDefaultSafetyMode = pilot::safety_mode_e::NONE;
+	const int kDefaultStation = 0;
+	safety_interface->set_safety_mode(kDefaultSafetyMode, kDefaultStation);
+
 	Super::main();
 	rclcpp::shutdown();
 }
