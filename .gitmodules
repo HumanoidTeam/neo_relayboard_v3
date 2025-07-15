@@ -1,7 +1,7 @@
 [submodule "pilot-public"]
 	path = pilot-public
-	url = https://github.com/HumanoidTeam/pilot-public.git
+	url = git@github.com:HumanoidTeam/pilot-public.git
 	branch = hmnd
 [submodule "vnx-base"]
 	path = vnx-base
-	url = https://github.com/neobotix/vnx-base.git
+	url = git@github.com:neobotix/vnx-base.git
