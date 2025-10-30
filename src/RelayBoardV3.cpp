@@ -48,13 +48,16 @@ RelayBoardV3::RelayBoardV3(const std::string &_vnx_name, std::shared_ptr<rclcpp:
 
 void RelayBoardV3::main(){
 	for(const auto &entry : topics_board_to_ros){
+		RCLCPP_INFO(nh->get_logger(), "Subscribing topics_board_to_ros: %s", entry.second.c_str());
 		subscribe(entry.first, 100);
 	}
 	for(const auto &entry : topics_ros_to_board){
 		const auto &ros_type = entry.first;
 		if(ros_type == "trajectory_msgs/JointTrajectory"){
+			RCLCPP_INFO(nh->get_logger(), "Subscribing to JointTrajectory topics");
 			bulk_subscribe<trajectory_msgs::msg::JointTrajectory>(std::bind(&RelayBoardV3::handle_JointTrajectory, this, std::placeholders::_1, std::placeholders::_2), entry.second, rclcpp::QoS(rclcpp::KeepLast(max_subscribe_queue_ros)));
 		} else if(ros_type == "neo_msgs2/KinematicsState") {
+			RCLCPP_INFO(nh->get_logger(), "Subscribing to KinematicsState topics");
 			bulk_subscribe<neo_msgs2::msg::KinematicsState>(std::bind(&RelayBoardV3::handle_KinematicsState, this, std::placeholders::_1, std::placeholders::_2), entry.second, rclcpp::QoS(rclcpp::KeepLast(max_subscribe_queue_ros)));
 		} else{
 			log(WARN) << "Unsupported ROS type: " << ros_type;
@@ -62,6 +65,13 @@ void RelayBoardV3::main(){
 	}
 	for(const auto &topic : topics_from_board){
 		subscribe(topic, 100);
+		RCLCPP_INFO(nh->get_logger(), "Subscribing topics_from_board: %s", topic->get_topic_name().c_str());
+	}
+	const size_t subscription_count = import_subscribers.size();
+	RCLCPP_INFO(nh->get_logger(), "Subscription count: %zu", subscription_count);
+	if(subscription_count == 0){
+		RCLCPP_ERROR(nh->get_logger(), "This node is not subscribing to any topics");
+		return;
 	}
 	platform_interface = std::make_shared<PlatformInterfaceClient>(platform_interface_server);
 	safety_interface = std::make_shared<SafetyInterfaceClient>(safety_server);
@@ -462,6 +472,7 @@ void RelayBoardV3::bulk_subscribe(std::function<void(std::shared_ptr<const T>, v
 	for(const auto &entry : mapping){
 		const auto &ros_topic = entry.first;
 		const auto &pilot_topic = entry.second;
+		RCLCPP_INFO(nh->get_logger(), "Bulk subscribing to topic: %s", ros_topic.c_str());
 		if(!import_subscribers.count(ros_topic)){
 			std::function<void(std::shared_ptr<const T>)> callback = std::bind(func, std::placeholders::_1, pilot_topic);
 			std::shared_ptr<rclcpp::SubscriptionBase> subs = nh->create_subscription<T>(ros_topic, qos, callback);

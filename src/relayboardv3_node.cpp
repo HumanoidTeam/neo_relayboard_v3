@@ -45,11 +45,14 @@ int main(int argc, char **argv){
 			vnx::Handle<vnx::Proxy> proxy = new vnx::Proxy("RelayBoardV3_Proxy", vnx::Endpoint::from_url(board_node));
 			for(const auto &entry : module->topics_board_to_ros){
 				proxy->import_list.push_back(entry.first);
+				RCLCPP_INFO(nh->get_logger(), "topics_board_to_ros: %s", entry.second.c_str());
 			}
 			for(const auto &topic : module->topics_from_board){
 				proxy->import_list.push_back(topic);
+				RCLCPP_INFO(nh->get_logger(), "topics_from_board: %s", topic->get_topic_name().c_str());
 			}
 			for(const auto &entry : module->topics_ros_to_board){
+				RCLCPP_INFO(nh->get_logger(), "topics_ros_to_board: %s", entry.first.c_str());
 				for(const auto &types : entry.second){
 					proxy->export_list.push_back(types.second);
 				}
@@ -61,6 +64,7 @@ int main(int argc, char **argv){
 		}
 		module.start_detached();
 	}
+	RCLCPP_INFO(nh->get_logger(), "Starting RelayBoardV3Node");
 
 	rclcpp::spin(nh);
 	vnx::close();
