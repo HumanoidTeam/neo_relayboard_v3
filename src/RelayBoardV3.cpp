@@ -67,6 +67,16 @@ void RelayBoardV3::main(){
 		subscribe(topic, 100);
 		RCLCPP_INFO(nh->get_logger(), "Subscribing topics_from_board: %s", topic->get_topic_name().c_str());
 	}
+
+	for (const auto& [topic_name, topic_ptr] : import_subscribers) {
+		RCLCPP_INFO(nh->get_logger(), "Subscribing to topic: %s", topic_name.c_str());
+		if (!topic_ptr) {
+			RCLCPP_ERROR(nh->get_logger(), "Topic pointer is null for topic: %s", topic_name.c_str());
+			continue;
+		} else {
+			RCLCPP_INFO(nh->get_logger(), "Subscribing to topic: %s", topic_ptr->get_topic_name());
+		}
+	}
 	const size_t subscription_count = import_subscribers.size();
 	RCLCPP_INFO(nh->get_logger(), "Subscription count: %zu", subscription_count);
 	if(subscription_count == 0){
