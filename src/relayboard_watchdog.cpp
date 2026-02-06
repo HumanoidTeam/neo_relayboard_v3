@@ -1,7 +1,6 @@
-// Copyright HMND
-// Watchdog that monitors the relayboard state topic for a single timeout.
+// Watchdog that monitors the relayboard state topic for a specific duration.
 // After the timeout: if unhealthy (no message received), restart the target and exit;
-// if healthy, exit the watchdog only. Verbose logging for testing.
+// if healthy, exit the watchdog only.
 
 #include <chrono>
 #include <cstdlib>
@@ -164,20 +163,19 @@ class RelayboardWatchdog : public rclcpp::Node {
 
  private:
   void onTimer() {
-    const auto now_ros = this->now();
-    const double elapsed = (now_ros - start_time_).seconds();
+    const double elapsed_sec = (this->get_clock()->now() - start_time_).seconds();
 
     // Verbose tick (for testing)
     const char * health_str = received_any_ ? "healthy" : "unhealthy (no message yet)";
     const std::vector<pid_t> pids = findPidsByTarget(node_name_, node_name_);
     RCLCPP_INFO(this->get_logger(),
                 "elapsed=%.3fs/%.2fs state=%s target_pids=[%s]",
-                elapsed, timeout_sec_, health_str, pidsToString(pids).c_str());
+                elapsed_sec, timeout_sec_, health_str, pidsToString(pids).c_str());
 
     const bool healthy = received_any_;
-    if (elapsed < timeout_sec_) {
+    if (elapsed_sec < timeout_sec_) {
       if (healthy) {
-        // Healthy before timeout: terminate the watchdog.
+        // Healthy within timeout: terminate the watchdog.
         RCLCPP_INFO(this->get_logger(), "Target is healthy. Shutting down watchdog.");
         rclcpp::shutdown();
         std::exit(0);
@@ -191,7 +189,7 @@ class RelayboardWatchdog : public rclcpp::Node {
                 "Timeout reached (%.2fs). Target unhealthy.",
                 timeout_sec_);
     RCLCPP_INFO(this->get_logger(),
-                "Shutting down target node '%s' (SIGTERM).",
+                "Shutting down target node '%s' (SIGKILL).",
                 node_name_.c_str());
     restartTarget();
     RCLCPP_INFO(this->get_logger(), "Shutting down watchdog.");
