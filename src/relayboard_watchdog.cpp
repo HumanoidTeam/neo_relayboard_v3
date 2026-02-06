@@ -117,7 +117,7 @@ std::vector<pid_t> findPidsByTarget(const std::string &process_name, const std::
   return result;
 }
 
-void terminatePids(const std::vector<pid_t> &pids, int sig = SIGTERM) {
+void terminatePids(const std::vector<pid_t> &pids, int sig = SIGKILL) {
   for (pid_t pid : pids) {
     if (pid > 1) {
       kill(pid, sig);
@@ -208,7 +208,7 @@ class RelayboardWatchdog : public rclcpp::Node {
       RCLCPP_INFO(this->get_logger(),
                   "[relayboard_watchdog] Sending SIGTERM to %zu process(es) named '%s'.",
                   pids.size(), node_name_.c_str());
-      terminatePids(pids, SIGTERM);
+      terminatePids(pids, SIGKILL);
     }
   }
 
