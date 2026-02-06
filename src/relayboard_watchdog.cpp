@@ -1,6 +1,7 @@
 // Copyright HMND
-// A simple watchdog that monitors a topic and restarts the target process
-// if no messages are received within configured timeouts.
+// Watchdog that monitors the relayboard state topic for a single timeout.
+// After the timeout: if unhealthy (no message received), restart the target and exit;
+// if healthy, exit the watchdog only. Verbose logging for testing.
 
 #include <chrono>
 #include <csignal>
@@ -128,15 +129,13 @@ class RelayboardWatchdog : public rclcpp::Node {
  public:
   RelayboardWatchdog()
       : rclcpp::Node("relayboard_watchdog"),
-        last_msg_time_(this->now()),
+        start_time_(this->now()),
         received_any_(false),
-        last_restart_time_(this->now()) {
+        timeout_handled_(false) {
     state_topic_ = this->declare_parameter<std::string>("state_topic", "/relayboard_v3/state");
-    startup_timeout_sec_ = this->declare_parameter<double>("startup_timeout_sec", 5.0);
-    deadman_timeout_sec_ = this->declare_parameter<double>("deadman_timeout_sec", 2.0);
+    timeout_sec_ = this->declare_parameter<double>("timeout_sec", 5.0);
     target_node_name_ = this->declare_parameter<std::string>("target_node_name", "/relayboardv3_node");
 
-    // Derive process name from target_node_name (strip leading slash).
     process_name_ = target_node_name_;
     if (!process_name_.empty() && process_name_.front() == '/') {
       process_name_.erase(process_name_.begin());
@@ -149,78 +148,77 @@ class RelayboardWatchdog : public rclcpp::Node {
           received_any_ = true;
           last_msg_time_ = this->now();
         });
+    last_msg_time_ = this->now();
 
     timer_ = this->create_wall_timer(200ms, std::bind(&RelayboardWatchdog::onTimer, this));
     RCLCPP_INFO(this->get_logger(),
-                "relayboard_watchdog started. Monitoring '%s', target '%s' (proc='%s'), "
-                "startup_timeout=%.2fs, deadman_timeout=%.2fs",
-                state_topic_.c_str(), target_node_name_.c_str(), process_name_.c_str(),
-                startup_timeout_sec_, deadman_timeout_sec_);
+                "[relayboard_watchdog] Started. Monitoring '%s', target '%s' (proc='%s'), timeout=%.2fs. State: waiting for first message or timeout.",
+                state_topic_.c_str(), target_node_name_.c_str(), process_name_.c_str(), timeout_sec_);
   }
 
  private:
   void onTimer() {
+    if (timeout_handled_) {
+      return;
+    }
     const auto now_ros = this->now();
-    const double since_last_msg = (now_ros - last_msg_time_).seconds();
+    const double elapsed = (now_ros - start_time_).seconds();
 
-    // Debug: log current time and target process PIDs
-    {
-      std::string node_name = target_node_name_;
-      if (!node_name.empty() && node_name.front() == '/') node_name.erase(node_name.begin());
-      auto pids = findPidsByTarget(process_name_, node_name);
-      if (pids.size() == 1) {
-        RCLCPP_INFO(this->get_logger(),
-                    "watchdog tick t=%.3f target='%s' target_pid=%d",
-                    now_ros.seconds(), target_node_name_.c_str(), static_cast<int>(pids[0]));
-      } else {
-        std::ostringstream pid_list;
-        for (size_t i = 0; i < pids.size(); ++i) {
-          if (i) pid_list << ",";
-          pid_list << pids[i];
-        }
-        RCLCPP_INFO(this->get_logger(),
-                    "watchdog tick t=%.3f target='%s' target_pids=[%s]",
-                    now_ros.seconds(), target_node_name_.c_str(), pid_list.str().c_str());
+    // Verbose tick (for testing)
+    const char * health_str = received_any_ ? "healthy" : "unhealthy (no message yet)";
+    std::string node_name = target_node_name_;
+    if (!node_name.empty() && node_name.front() == '/') node_name.erase(node_name.begin());
+    auto pids = findPidsByTarget(process_name_, node_name);
+    if (pids.size() == 1) {
+      RCLCPP_INFO(this->get_logger(),
+                  "[relayboard_watchdog] tick t=%.3f elapsed=%.3fs state=%s target_pid=%d",
+                  now_ros.seconds(), elapsed, health_str, static_cast<int>(pids[0]));
+    } else {
+      std::ostringstream pid_list;
+      for (size_t i = 0; i < pids.size(); ++i) {
+        if (i) pid_list << ",";
+        pid_list << pids[i];
       }
+      RCLCPP_INFO(this->get_logger(),
+                  "[relayboard_watchdog] tick t=%.3f elapsed=%.3fs state=%s target_pids=[%s]",
+                  now_ros.seconds(), elapsed, health_str, pid_list.str().c_str());
     }
 
-    // Startup timeout: no messages seen at all within startup_timeout_sec_
-    if (!received_any_ && since_last_msg >= startup_timeout_sec_) {
-      RCLCPP_WARN(this->get_logger(),
-                  "No messages on '%s' within startup timeout (%.2fs). Restarting '%s'.",
-                  state_topic_.c_str(), startup_timeout_sec_, process_name_.c_str());
-      restartTarget();
-      // After restart, give it startup_timeout_sec_ again before checking startup condition
-      last_msg_time_ = this->now();
+    if (elapsed < timeout_sec_) {
       return;
     }
 
-    // Deadman timeout: messages stopped for longer than deadman_timeout_sec_
-    if (received_any_ && since_last_msg >= deadman_timeout_sec_) {
-      // Avoid restart storms: enforce a minimal 1s between restarts
-      const double since_restart = (now_ros - last_restart_time_).seconds();
-      if (since_restart >= 1.0) {
-        RCLCPP_WARN(this->get_logger(),
-                    "No messages on '%s' for %.2fs (deadman=%.2fs). Restarting '%s'.",
-                    state_topic_.c_str(), since_last_msg, deadman_timeout_sec_, process_name_.c_str());
-        restartTarget();
-        last_msg_time_ = this->now();
-      }
+    timeout_handled_ = true;
+    const bool healthy = received_any_;
+
+    RCLCPP_INFO(this->get_logger(),
+                "[relayboard_watchdog] Timeout reached (%.2fs). Target is %s.",
+                timeout_sec_, healthy ? "healthy" : "unhealthy");
+
+    if (!healthy) {
+      RCLCPP_INFO(this->get_logger(),
+                  "[relayboard_watchdog] Shutting down target node '%s' (SIGTERM).",
+                  process_name_.c_str());
+      restartTarget();
+    } else {
+      RCLCPP_INFO(this->get_logger(), "[relayboard_watchdog] Target is healthy. Shutting down watchdog only.");
     }
+
+    RCLCPP_INFO(this->get_logger(), "[relayboard_watchdog] Shutting down watchdog.");
+    rclcpp::shutdown();
   }
 
   void restartTarget() {
-    last_restart_time_ = this->now();
-    // Find and terminate target process(es)
     std::string node_name = target_node_name_;
     if (!node_name.empty() && node_name.front() == '/') node_name.erase(node_name.begin());
     auto pids = findPidsByTarget(process_name_, node_name);
     if (pids.empty()) {
       RCLCPP_WARN(this->get_logger(),
-                  "Target process '%s' not found by comm. Nothing to kill; expecting external respawn.",
+                  "[relayboard_watchdog] Target process '%s' not found. Nothing to kill; expecting external respawn.",
                   process_name_.c_str());
     } else {
-      RCLCPP_INFO(this->get_logger(), "Sending SIGTERM to %zu process(es) named '%s'.",
+      RCLCPP_INFO(this->get_logger(),
+                  "[relayboard_watchdog] Sending SIGTERM to %zu process(es) named '%s'.",
                   pids.size(), process_name_.c_str());
       terminatePids(pids, SIGTERM);
     }
@@ -228,17 +226,17 @@ class RelayboardWatchdog : public rclcpp::Node {
 
  private:
   std::string state_topic_;
-  double startup_timeout_sec_;
-  double deadman_timeout_sec_;
+  double timeout_sec_;
   std::string target_node_name_;
   std::string process_name_;
 
   rclcpp::Subscription<neo_msgs2::msg::RelayBoardV3>::SharedPtr sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
+  rclcpp::Time start_time_;
   rclcpp::Time last_msg_time_;
   bool received_any_;
-  rclcpp::Time last_restart_time_;
+  bool timeout_handled_;
 };
 
 int main(int argc, char **argv) {

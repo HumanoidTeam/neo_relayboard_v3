@@ -44,8 +44,7 @@ def _launch_nodes(context):
         parameters=[
             {
                 "state_topic": "/relayboard_v3/state",
-                "startup_timeout_sec": 5.0,
-                "deadman_timeout_sec": 2.0,
+                "timeout_sec": 5.0,
                 "target_node_name": f"/{RELAYBOARD_NODE_NAME}",
             }
         ],
