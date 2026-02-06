@@ -158,7 +158,7 @@ class RelayboardWatchdog : public rclcpp::Node {
 
     timer_ = this->create_wall_timer(200ms, std::bind(&RelayboardWatchdog::onTimer, this));
     RCLCPP_INFO(this->get_logger(),
-                "[relayboard_watchdog] Started. Monitoring '%s', target '%s' (proc='%s'), timeout=%.2fs. State: waiting for first message or timeout.",
+                "Started. Monitoring '%s', target '%s' (proc='%s'), timeout=%.2fs. State: waiting for first message or timeout.",
                 state_topic_.c_str(), target_node_name_.c_str(), node_name_.c_str(), timeout_sec_);
   }
 
@@ -171,8 +171,8 @@ class RelayboardWatchdog : public rclcpp::Node {
     const char * health_str = received_any_ ? "healthy" : "unhealthy (no message yet)";
     const std::vector<pid_t> pids = findPidsByTarget(node_name_, node_name_);
     RCLCPP_INFO(this->get_logger(),
-                "[relayboard_watchdog] tick t=%.3f elapsed=%.3fs state=%s target_pids=[%s]",
-                now_ros.seconds(), elapsed, health_str, pidsToString(pids).c_str());
+                "elapsed=%.3fs/%.2fs state=%s target_pids=[%s]",
+                elapsed, timeout_sec_, health_str, pidsToString(pids).c_str());
 
     if (elapsed < timeout_sec_) {
       return;
@@ -181,19 +181,19 @@ class RelayboardWatchdog : public rclcpp::Node {
     const bool healthy = received_any_;
 
     RCLCPP_INFO(this->get_logger(),
-                "[relayboard_watchdog] Timeout reached (%.2fs). Target is %s.",
+                "Timeout reached (%.2fs). Target is %s.",
                 timeout_sec_, healthy ? "healthy" : "unhealthy");
 
     if (!healthy) {
       RCLCPP_INFO(this->get_logger(),
-                  "[relayboard_watchdog] Shutting down target node '%s' (SIGTERM).",
+                  "Shutting down target node '%s' (SIGTERM).",
                   node_name_.c_str());
       restartTarget();
     } else {
-      RCLCPP_INFO(this->get_logger(), "[relayboard_watchdog] Target is healthy. Shutting down watchdog only.");
+      RCLCPP_INFO(this->get_logger(), "Target is healthy. Shutting down watchdog only.");
     }
 
-    RCLCPP_INFO(this->get_logger(), "[relayboard_watchdog] Shutting down watchdog.");
+    RCLCPP_INFO(this->get_logger(), "Shutting down watchdog.");
     rclcpp::shutdown();
     std::exit(0);
   }
@@ -202,11 +202,11 @@ class RelayboardWatchdog : public rclcpp::Node {
     const std::vector<pid_t> pids = findPidsByTarget(node_name_, node_name_);
     if (pids.empty()) {
       RCLCPP_WARN(this->get_logger(),
-                  "[relayboard_watchdog] Target process '%s' not found. Nothing to kill; expecting external respawn.",
+                  "Target process '%s' not found. Nothing to kill; expecting external respawn.",
                   node_name_.c_str());
     } else {
       RCLCPP_INFO(this->get_logger(),
-                  "[relayboard_watchdog] Sending SIGTERM to %zu process(es) named '%s'.",
+                  "Sending SIGTERM to %zu process(es) named '%s'.",
                   pids.size(), node_name_.c_str());
       terminatePids(pids, SIGKILL);
     }
