@@ -14,7 +14,7 @@ RELAYBOARD_NODE_NAME = "base_controller_node"
 
 def _launch_nodes(context):
     common_prefix_str = context.perform_substitution(LaunchConfiguration("common_prefix"))
-    prefix_kwargs = {"prefix": common_prefix_str.split()} if common_prefix_str.strip() else {}
+    prefix_kwargs = {"prefix": common_prefix_str}
 
     # Rox config: use source tree (vnx middleware doesn't support symlinks).
     repo_root = pathlib.Path(__file__).resolve().parents[4]
@@ -59,7 +59,7 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             "common_prefix",
             default_value="",
-            description="Optional prefix for relayboard and watchdog (e.g. 'taskset -c 2-9').",
+            description="Optional prefix for relayboard and watchdog: comma-separated (e.g. 'taskset,-c,2-9') or space-separated (e.g. 'taskset -c 2-9').",
         ),
         OpaqueFunction(function=_launch_nodes),
     ])
