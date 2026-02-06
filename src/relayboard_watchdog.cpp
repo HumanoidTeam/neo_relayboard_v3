@@ -174,25 +174,26 @@ class RelayboardWatchdog : public rclcpp::Node {
                 "elapsed=%.3fs/%.2fs state=%s target_pids=[%s]",
                 elapsed, timeout_sec_, health_str, pidsToString(pids).c_str());
 
+    const bool healthy = received_any_;
     if (elapsed < timeout_sec_) {
+      if (healthy) {
+        // Healthy before timeout: terminate the watchdog.
+        RCLCPP_INFO(this->get_logger(), "Target is healthy. Shutting down watchdog.");
+        rclcpp::shutdown();
+        std::exit(0);
+      }
+      // Not healthy yet: keep waiting for time elapsed.
       return;
     }
 
-    const bool healthy = received_any_;
-
+    // Timeout reached and still not healthy: restart target, then terminate watchdog.
     RCLCPP_INFO(this->get_logger(),
-                "Timeout reached (%.2fs). Target is %s.",
-                timeout_sec_, healthy ? "healthy" : "unhealthy");
-
-    if (!healthy) {
-      RCLCPP_INFO(this->get_logger(),
-                  "Shutting down target node '%s' (SIGTERM).",
-                  node_name_.c_str());
-      restartTarget();
-    } else {
-      RCLCPP_INFO(this->get_logger(), "Target is healthy. Shutting down watchdog only.");
-    }
-
+                "Timeout reached (%.2fs). Target unhealthy.",
+                timeout_sec_);
+    RCLCPP_INFO(this->get_logger(),
+                "Shutting down target node '%s' (SIGTERM).",
+                node_name_.c_str());
+    restartTarget();
     RCLCPP_INFO(this->get_logger(), "Shutting down watchdog.");
     rclcpp::shutdown();
     std::exit(0);
