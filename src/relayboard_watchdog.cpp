@@ -123,6 +123,15 @@ void terminatePids(const std::vector<pid_t> &pids, int sig = SIGTERM) {
     }
   }
 }
+
+std::string pidsToString(const std::vector<pid_t> &pids) {
+  std::ostringstream ss;
+  for (size_t i = 0; i < pids.size(); ++i) {
+    if (i) ss << ",";
+    ss << pids[i];
+  }
+  return ss.str();
+}
 }  // namespace
 
 class RelayboardWatchdog : public rclcpp::Node {
@@ -135,10 +144,9 @@ class RelayboardWatchdog : public rclcpp::Node {
     state_topic_ = this->declare_parameter<std::string>("state_topic", "/relayboard_v3/state");
     timeout_sec_ = this->declare_parameter<double>("timeout_sec", 5.0);
     target_node_name_ = this->declare_parameter<std::string>("target_node_name", "/relayboardv3_node");
-
-    process_name_ = target_node_name_;
-    if (!process_name_.empty() && process_name_.front() == '/') {
-      process_name_.erase(process_name_.begin());
+    node_name_ = target_node_name_;
+    if (!node_name_.empty() && node_name_.front() == '/') {
+      node_name_.erase(node_name_.begin());
     }
 
     using MsgT = neo_msgs2::msg::RelayBoardV3;
@@ -146,19 +154,18 @@ class RelayboardWatchdog : public rclcpp::Node {
         state_topic_, rclcpp::QoS(1),
         [this](const MsgT &) {
           received_any_ = true;
-          last_msg_time_ = this->now();
         });
-    last_msg_time_ = this->now();
 
     timer_ = this->create_wall_timer(200ms, std::bind(&RelayboardWatchdog::onTimer, this));
     RCLCPP_INFO(this->get_logger(),
                 "[relayboard_watchdog] Started. Monitoring '%s', target '%s' (proc='%s'), timeout=%.2fs. State: waiting for first message or timeout.",
-                state_topic_.c_str(), target_node_name_.c_str(), process_name_.c_str(), timeout_sec_);
+                state_topic_.c_str(), target_node_name_.c_str(), node_name_.c_str(), timeout_sec_);
   }
 
  private:
   void onTimer() {
     if (timeout_handled_) {
+      // Only restart node once
       return;
     }
     const auto now_ros = this->now();
@@ -166,23 +173,10 @@ class RelayboardWatchdog : public rclcpp::Node {
 
     // Verbose tick (for testing)
     const char * health_str = received_any_ ? "healthy" : "unhealthy (no message yet)";
-    std::string node_name = target_node_name_;
-    if (!node_name.empty() && node_name.front() == '/') node_name.erase(node_name.begin());
-    auto pids = findPidsByTarget(process_name_, node_name);
-    if (pids.size() == 1) {
-      RCLCPP_INFO(this->get_logger(),
-                  "[relayboard_watchdog] tick t=%.3f elapsed=%.3fs state=%s target_pid=%d",
-                  now_ros.seconds(), elapsed, health_str, static_cast<int>(pids[0]));
-    } else {
-      std::ostringstream pid_list;
-      for (size_t i = 0; i < pids.size(); ++i) {
-        if (i) pid_list << ",";
-        pid_list << pids[i];
-      }
-      RCLCPP_INFO(this->get_logger(),
-                  "[relayboard_watchdog] tick t=%.3f elapsed=%.3fs state=%s target_pids=[%s]",
-                  now_ros.seconds(), elapsed, health_str, pid_list.str().c_str());
-    }
+    const std::vector<pid_t> pids = findPidsByTarget(node_name_, node_name_);
+    RCLCPP_INFO(this->get_logger(),
+                "[relayboard_watchdog] tick t=%.3f elapsed=%.3fs state=%s target_pids=[%s]",
+                now_ros.seconds(), elapsed, health_str, pidsToString(pids).c_str());
 
     if (elapsed < timeout_sec_) {
       return;
@@ -198,7 +192,7 @@ class RelayboardWatchdog : public rclcpp::Node {
     if (!healthy) {
       RCLCPP_INFO(this->get_logger(),
                   "[relayboard_watchdog] Shutting down target node '%s' (SIGTERM).",
-                  process_name_.c_str());
+                  node_name_.c_str());
       restartTarget();
     } else {
       RCLCPP_INFO(this->get_logger(), "[relayboard_watchdog] Target is healthy. Shutting down watchdog only.");
@@ -209,17 +203,15 @@ class RelayboardWatchdog : public rclcpp::Node {
   }
 
   void restartTarget() {
-    std::string node_name = target_node_name_;
-    if (!node_name.empty() && node_name.front() == '/') node_name.erase(node_name.begin());
-    auto pids = findPidsByTarget(process_name_, node_name);
+    const std::vector<pid_t> pids = findPidsByTarget(node_name_, node_name_);
     if (pids.empty()) {
       RCLCPP_WARN(this->get_logger(),
                   "[relayboard_watchdog] Target process '%s' not found. Nothing to kill; expecting external respawn.",
-                  process_name_.c_str());
+                  node_name_.c_str());
     } else {
       RCLCPP_INFO(this->get_logger(),
                   "[relayboard_watchdog] Sending SIGTERM to %zu process(es) named '%s'.",
-                  pids.size(), process_name_.c_str());
+                  pids.size(), node_name_.c_str());
       terminatePids(pids, SIGTERM);
     }
   }
@@ -228,13 +220,12 @@ class RelayboardWatchdog : public rclcpp::Node {
   std::string state_topic_;
   double timeout_sec_;
   std::string target_node_name_;
-  std::string process_name_;
+  std::string node_name_;  // target_node_name_ with leading slash stripped
 
   rclcpp::Subscription<neo_msgs2::msg::RelayBoardV3>::SharedPtr sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   rclcpp::Time start_time_;
-  rclcpp::Time last_msg_time_;
   bool received_any_;
   bool timeout_handled_;
 };
