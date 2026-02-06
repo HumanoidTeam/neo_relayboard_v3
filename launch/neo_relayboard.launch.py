@@ -4,13 +4,18 @@ import pathlib
 
 from ament_index_python.packages import get_package_share_path
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 RELAYBOARD_NODE_NAME = "base_controller_node"
 
 
-def generate_launch_description() -> LaunchDescription:
+def _launch_nodes(context):
+    common_prefix_str = context.perform_substitution(LaunchConfiguration("common_prefix"))
+    prefix_kwargs = {"prefix": common_prefix_str.split()} if common_prefix_str.strip() else {}
+
     # Rox config: use source tree (vnx middleware doesn't support symlinks).
     repo_root = pathlib.Path(__file__).resolve().parents[4]
     rox_share_path = repo_root / "ros" / "third_party" / "rox" / "rox_bringup"
@@ -28,6 +33,7 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[{"pilot_config": rox_config}],
         respawn=True,
         respawn_delay=1.0,
+        **prefix_kwargs,
     )
 
     watchdog_node = Node(
@@ -43,6 +49,18 @@ def generate_launch_description() -> LaunchDescription:
                 "target_node_name": f"/{RELAYBOARD_NODE_NAME}",
             }
         ],
+        **prefix_kwargs,
     )
 
-    return LaunchDescription([relayboard_node, watchdog_node])
+    return [relayboard_node, watchdog_node]
+
+
+def generate_launch_description() -> LaunchDescription:
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            "common_prefix",
+            default_value="",
+            description="Optional prefix for relayboard and watchdog (e.g. 'taskset -c 2-9').",
+        ),
+        OpaqueFunction(function=_launch_nodes),
+    ])
