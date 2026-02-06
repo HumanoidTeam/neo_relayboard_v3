@@ -4,6 +4,7 @@
 // if healthy, exit the watchdog only. Verbose logging for testing.
 
 #include <chrono>
+#include <cstdlib>
 #include <csignal>
 #include <cstring>
 #include <dirent.h>
@@ -139,8 +140,7 @@ class RelayboardWatchdog : public rclcpp::Node {
   RelayboardWatchdog()
       : rclcpp::Node("relayboard_watchdog"),
         start_time_(this->now()),
-        received_any_(false),
-        timeout_handled_(false) {
+        received_any_(false) {
     state_topic_ = this->declare_parameter<std::string>("state_topic", "/relayboard_v3/state");
     timeout_sec_ = this->declare_parameter<double>("timeout_sec", 5.0);
     target_node_name_ = this->declare_parameter<std::string>("target_node_name", "/relayboardv3_node");
@@ -164,10 +164,6 @@ class RelayboardWatchdog : public rclcpp::Node {
 
  private:
   void onTimer() {
-    if (timeout_handled_) {
-      // Only restart node once
-      return;
-    }
     const auto now_ros = this->now();
     const double elapsed = (now_ros - start_time_).seconds();
 
@@ -182,7 +178,6 @@ class RelayboardWatchdog : public rclcpp::Node {
       return;
     }
 
-    timeout_handled_ = true;
     const bool healthy = received_any_;
 
     RCLCPP_INFO(this->get_logger(),
@@ -200,6 +195,7 @@ class RelayboardWatchdog : public rclcpp::Node {
 
     RCLCPP_INFO(this->get_logger(), "[relayboard_watchdog] Shutting down watchdog.");
     rclcpp::shutdown();
+    std::exit(0);
   }
 
   void restartTarget() {
@@ -227,7 +223,6 @@ class RelayboardWatchdog : public rclcpp::Node {
 
   rclcpp::Time start_time_;
   bool received_any_;
-  bool timeout_handled_;
 };
 
 int main(int argc, char **argv) {
