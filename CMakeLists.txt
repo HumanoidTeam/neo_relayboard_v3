@@ -56,6 +56,10 @@ add_executable(relayboardv3_node
 	src/relayboardv3_node.cpp
 )
 
+add_executable(relayboard_watchdog
+	src/relayboard_watchdog.cpp
+)
+
 ament_target_dependencies(relayboardv3
 	${dependencies}
 )
@@ -68,11 +72,16 @@ target_link_libraries(relayboardv3_node
 	relayboardv3
 )
 
+ament_target_dependencies(relayboard_watchdog
+	${dependencies}
+)
+
 
 add_subdirectory(pilot-public)
 
 install(TARGETS relayboardv3 DESTINATION lib/${PROJECT_NAME})
 install(TARGETS relayboardv3_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS relayboard_watchdog DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_package()
